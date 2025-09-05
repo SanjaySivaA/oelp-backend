@@ -1,9 +1,20 @@
 from sqlalchemy import Column, String, Integer, DateTime, Enum, ForeignKey, Boolean, Float, Text
 from sqlalchemy.orm import relationship, declarative_base
 
+import enum
 from datetime import datetime
 
 Base = declarative_base()
+
+class QuestionType(enum.Enum):
+    MCSC = "MCSC" # Multiple Choice Single Correct
+    MCMC = "MCMC" # Multiple Choice Multiple Correct
+    NUM = "NUM" # Numerical
+
+class DifficultyLevel(enum.Enum):
+    EASY = "EASY" 
+    MEDIUM = "MEDIUM"
+    HARD = "HARD" 
 
 class User(Base):
     __tablename__ = "users"
@@ -56,4 +67,34 @@ class Subtopic(Base):
 
     questions = relationship("Question",back_populates="subtopic")
     subtopic = relationship("Chapter",back_populates="subtopic")
+
+class Question(Base):
+    __tablename___ = "questions"
+    question_id = Column(String,primary_key=True)
+    question_text = Column(String,nullable=False)
+    image_url = Column(String,nullable=True)
+    question_type = Column(Enum(QuestionType),nullable=False)
+    subtopic_id = Column(Integer,ForeignKey("subtopics.subtopic_id"))
+    difficulty_level = Column(Enum(QuestionType),nullable=False)
+    ### Format of Source and source details yet to be confirmed
+    positive_marks = Column(Integer,nullable=False)
+    negative_marks = Column(Integer,nullable=False)
+    solution_explanation = Column(String,nullable=False) # or Text
+    ### AI Validation Status
+    created_at = Column(DateTime,default=datetime.utcnow)
+
+    subtopic = relationship("Subtopic",back_populates="questions")
+    options = relationship("QuestionOption",back_populates="questions")
+    answers = relationship("TestAnswer",back_populates="questions")
+    exam_applicability = relationship("QuestionExamApplicability",back_populates="questions")
+
+class QuestionOption(Base):
+    __tablename___ = "question_options"
+    option_id = Column(String,primary_key=True)
+    question_id = Column(String,ForeignKey("questions.question_id"))
+    option_text = Column(String,nullable=True)
+    image_url = Column(String,nullable=True)
+    is_correct = Column(Boolean,nullable=False)
+
+    questions = relationship("Question",back_populates="options")
 
