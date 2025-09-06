@@ -28,3 +28,15 @@ After this installed ORM and database driver
 - **SQLAlchemy** - ORM
 - **psycopg** - database driver
 - **pydantic** - validation
+
+Authentication libs - passlib, python-jose  
+```py
+pip install "passlib[bcrypt]" python-jose
+```
+
+`config.py` - loads from `.env`
+
+For `pgvector` import
+```py
+    pip install pgvector
+```
