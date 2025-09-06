@@ -5,6 +5,7 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from datetime import datetime, timedelta, timezone
 import uuid
+from sqlalchemy import select
 
 # project modules
 from . import models, schemas
