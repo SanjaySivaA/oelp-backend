@@ -16,6 +16,10 @@ Current files in the virtual environment `/venv` were set up by
     - After this made a database and user  in `psql` for the API's use.
     - created a database and granted all permissions in it to the API user.
 
+Had to install vector extension separately
+```
+    sudo apt install postgresql-14-pgvector
+```
 
 
 After this installed ORM and database driver
@@ -24,7 +28,7 @@ After this installed ORM and database driver
 ```
 Authentication libs - passlib, python-jose  
 ```py
-pip install "passlib[bcrypt]" python-jose
+    pip install "passlib[bcrypt]" python-jose
 ```
 
 `config.py` - loads from `.env`
