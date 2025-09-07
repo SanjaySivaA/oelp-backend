@@ -16,7 +16,7 @@ Current files in the virtual environment `/venv` were set up by
     - After this made a database and user  in `psql` for the API's use.
     - created a database and granted all permissions in it to the API user.
 
-Had to install vector extension separately
+Had to install vector extension separately(os/postgres installation specific)
 ```
     sudo apt install postgresql-14-pgvector
 ```
