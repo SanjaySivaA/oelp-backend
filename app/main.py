@@ -12,6 +12,9 @@ from . import models, schemas
 from .database import engine, get_db
 from .config import settings
 
+
+from fastapi.middleware.cors import CORSMiddleware
+
 # Use alembic
 
 # --- Security & Hashing Setup ---
@@ -19,6 +22,31 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 app = FastAPI()
+
+# --- CORS ---
+# 2. DEFINE THE ALLOWED ORIGINS (FRONTEND ADDRESSES)
+# For development, we can be permissive. Flutter web uses random ports.
+# We include the standard localhost addresses.
+origins = ["*"]
+    #"http://localhost",
+    #"http://localhost:8080",
+    # Add any other specific port your Flutter app runs on if you know it
+    # Or for maximum ease in local dev, you could use "*"
+    # "http://localhost:54321" # Example of a specific Flutter dev port
+#]
+
+
+# 3. ADD THE MIDDLEWARE TO YOUR APP
+# This should be added before your routes are defined.
+app.add_middleware(
+    CORSMiddleware,
+    #allow_origins=origins, # Allows specific origins
+    allow_origins=["*"], # Or, allow all origins
+    allow_credentials=True,
+    allow_methods=["*"], # Allows all methods (GET, POST, etc.)
+    allow_headers=["*"], # Allows all headers
+)
+
 
 # --- Utility Functions ---
 
@@ -87,3 +115,63 @@ async def login_for_access_token(
     )
     
     return {"access_token": access_token, "token_type": "bearer"}
+
+@app.get("/getTest")
+async def sendTest():
+    return {
+        "sessionId": "session_mock_12345",
+        "testId": "jee_main_mock_01",
+        "testName": "Mock Test for Development",
+        "durationInSeconds": 3600, # 1 hour
+        "sections": [
+            {
+                "sectionId": "phy_sec_1",
+                "sectionName": "Physics Sec 1",
+                "questions": [
+                    {
+                        "questionId": "q_phy_01",
+                        "questionText": "What is the unit of force?",
+                        "questionImageUrl": None,
+                        "type": "MCQ",
+                        "positiveMarks": 4,
+                        "negativeMarks": -1,
+                        "options": [
+                            {"optionId": "opt_p1_a", "optionText": "Newton", "optionImageUrl": None},
+                            {"optionId": "opt_p1_b", "optionText": "Watt", "optionImageUrl": None},
+                            {"optionId": "opt_p1_c", "optionText": "Joule", "optionImageUrl": None},
+                            {"optionId": "opt_p1_d", "optionText": "Pascal", "optionImageUrl": None}
+                        ]
+                    },
+                     {
+                        "questionId": "q_phy_02",
+                        "questionText": "What is the value of g?",
+                        "questionImageUrl": None,
+                        "type": "NUMERICAL",
+                        "positiveMarks": 4,
+                        "negativeMarks": 0,
+                        "options": []
+                    }
+                ]
+            },
+            {
+                "sectionId": "chem_sec_1",
+                "sectionName": "Chemistry Sec 1",
+                "questions": [
+                    {
+                        "questionId": "q_chem_01",
+                        "questionText": "What is the chemical symbol for Gold?",
+                        "questionImageUrl": None,
+                        "type": "MCQ",
+                        "positiveMarks": 4,
+                        "negativeMarks": -1,
+                        "options": [
+                            {"optionId": "opt_c1_a", "optionText": "Ag", "optionImageUrl": None},
+                            {"optionId": "opt_c1_b", "optionText": "Au", "optionImageUrl": None},
+                            {"optionId": "opt_c1_c", "optionText": "Fe", "optionImageUrl": None},
+                            {"optionId": "opt_c1_d", "optionText": "Pb", "optionImageUrl": None}
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
