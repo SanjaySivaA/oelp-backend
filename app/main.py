@@ -130,7 +130,7 @@ async def sendTest():
                 "questions": [
                     {
                         "questionId": "q_phy_01",
-                        "questionText": "What is the unit of force?",
+                        "questionText": "What is the unit of **force**?",
                         "questionImageUrl": None,
                         "type": "MCQ",
                         "positiveMarks": 4,
@@ -144,7 +144,7 @@ async def sendTest():
                     },
                      {
                         "questionId": "q_phy_02",
-                        "questionText": "What is the value of g?",
+                        "questionText": "What is the value of **g**?",
                         "questionImageUrl": None,
                         "type": "NUMERICAL",
                         "positiveMarks": 4,
