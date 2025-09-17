@@ -1,4 +1,21 @@
-/venv
+# Virtual Environment
+venv/
+/venv/
+.venv/
+
+# Python cache
 **/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# IDE / Editor specific
+.vscode/
+.idea/
+*.DS_Store
+
+# Secrets file
 .env
-.DS_Store
+
+# alembic backup files
+*.bak
