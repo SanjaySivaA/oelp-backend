@@ -21,3 +21,7 @@ class Token(BaseModel):
 # Schema for the data embedded within the JWT
 class TokenData(BaseModel):
     email: str | None = None
+
+class RegisterResponse(BaseModel):
+    user_info: UserPublic  # This key will contain a UserPublic object
+    token: Token
