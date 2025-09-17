@@ -50,4 +50,4 @@ EXPOSE 8000
 
 # The command to execute when the container starts.
 # It runs the Uvicorn server. --host 0.0.0.0 is crucial to make it accessible from outside the container.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000
