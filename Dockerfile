@@ -40,7 +40,7 @@ WORKDIR /app
 COPY --from=builder /opt/venv /opt/venv
 
 # Copy your application source code into the container
-COPY ./app ./app
+COPY . .
 
 # Set the PATH to use the Python interpreter and packages from our venv
 ENV PATH="/opt/venv/bin:$PATH"
