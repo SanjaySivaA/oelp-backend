@@ -40,11 +40,11 @@ origins = ["*"]
 # This should be added before your routes are defined.
 app.add_middleware(
     CORSMiddleware,
-    #allow_origins=origins, # Allows specific origins
-    allow_origins=settings.ALLOWED_ORIGINS, # Or, allow all origins
+    # allow_origins=settings.ALLOWED_ORIGINS, # <-- We are replacing this line
+    allow_origin_regex=settings.CORS_ORIGIN_REGEX, # <-- With this new line
     allow_credentials=True,
-    allow_methods=["*"], # Allows all methods (GET, POST, etc.)
-    allow_headers=["*"], # Allows all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
