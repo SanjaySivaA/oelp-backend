@@ -24,31 +24,20 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 app = FastAPI()
 
 # --- CORS ---
-# 2. DEFINE THE ALLOWED ORIGINS (FRONTEND ADDRESSES)
-# For development, we can be permissive. Flutter web uses random ports.
-# We include the standard localhost addresses.
-origins = ["*"]
-    #"http://localhost",
-    #"http://localhost:8080",
-    # Add any other specific port your Flutter app runs on if you know it
-    # Or for maximum ease in local dev, you could use "*"
-    # "http://localhost:54321" # Example of a specific Flutter dev port
-#]
-
 
 # 3. ADD THE MIDDLEWARE TO YOUR APP
 # This should be added before your routes are defined.
 app.add_middleware(
     CORSMiddleware,
-    # allow_origins=settings.ALLOWED_ORIGINS, # <-- We are replacing this line
-    allow_origin_regex=settings.CORS_ORIGIN_REGEX, # <-- With this new line
+    allow_origins=settings.ALLOWED_ORIGINS, # <-- We are replacing this line
+    # allow_origin_regex=settings.CORS_ORIGIN_REGEX, # <-- With this new line
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
-# --- Utility Functions ---
+# --- Utility Functions ---nightcore
 
 def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
