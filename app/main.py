@@ -1,3 +1,5 @@
+import re  # Add this import at the top
+from sqlalchemy import select, func  # Add func for random ordering
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,6 +8,11 @@ from passlib.context import CryptContext
 from datetime import datetime, timedelta, timezone
 import uuid
 from sqlalchemy import select
+from . import rag_routes
+from .auth import get_current_user
+from sqlalchemy.orm import selectinload # Efficiently load related options
+from sqlalchemy.orm import selectinload
+from sqlalchemy import func, case, text
 
 # project modules
 from . import models, schemas
@@ -40,11 +47,11 @@ origins = ["*"]
 # This should be added before your routes are defined.
 app.add_middleware(
     CORSMiddleware,
-    # allow_origins=settings.ALLOWED_ORIGINS, # <-- We are replacing this line
-    allow_origin_regex=settings.CORS_ORIGIN_REGEX, # <-- With this new line
+    #allow_origins=origins, # Allows specific origins
+    allow_origins=settings.ALLOWED_ORIGINS, # Or, allow all origins
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"], # Allows all methods (GET, POST, etc.)
+    allow_headers=["*"], # Allows all headers
 )
 
 
@@ -65,37 +72,6 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
-
-async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db)):
-    """
-    Dependency to get the current user from a JWT token.
-    """
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        # Decode the JWT
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        # The "sub" (subject) of our token is the user's email
-        email: str = payload.get("sub")
-        if email is None:
-            raise credentials_exception
-        token_data = schemas.TokenData(email=email)
-    except JWTError:
-        # If the token is invalid for any reason, raise the exception
-        raise credentials_exception
-    
-    # Find the user in the database
-    user_result = await db.execute(select(models.User).where(models.User.email == token_data.email))
-    user = user_result.scalars().first()
-    
-    if user is None:
-        # If the user from the token doesn't exist in the DB, raise the exception
-        raise credentials_exception
-    
-    return user
 
 # --- Endpoints ---
 
@@ -132,6 +108,10 @@ async def register_user(user: schemas.UserCreate, db: AsyncSession = Depends(get
         "token": {"access_token": access_token, "token_type": "bearer"}
     }
 
+@app.get("/users/me", response_model=schemas.UserPublic)
+async def read_users_me(current_user: models.User = Depends(get_current_user)): # This line now works
+    return current_user
+
 @app.post("/login", response_model=schemas.Token)
 async def login_for_access_token(
     form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)
@@ -167,120 +147,292 @@ async def read_users_me(current_user: models.User = Depends(get_current_user)):
     return current_user
 
 @app.get("/getTest")
-async def sendTest():
+async def get_test_from_db(db: AsyncSession = Depends(get_db)):
+    query = (
+        select(models.Question)
+        .options(selectinload(models.Question.options))
+        .order_by(func.random())
+        .limit(10)
+    )
+    result = await db.execute(query)
+    questions_from_db = result.scalars().unique().all()
+
+    if not questions_from_db:
+        raise HTTPException(status_code=404, detail="No questions found.")
+
+    parsed_questions = [{
+        "questionId": q.question_id,
+        "questionText": q.question_text,
+        "questionImageUrl": q.image_url,
+        "options": [{"optionId": opt.option_id, "optionText": opt.option_text, "optionImageUrl": opt.image_url} for opt in q.options]
+    } for q in questions_from_db]
+    
     return {
-        "sessionId": "session_mock_12345",
-        "testId": "jee_main_mock_01",
-        "testName": "Test",
-        "durationInSeconds": 3600, # 1 hour
-        "sections": [
-            {
-                "sectionId": "phy_sec_1",
-                "sectionName": "Physics Sec 1",
-                "type": "MCSC",
-                "positiveMarks": 4,
-                "negativeMarks": -1,
-                "questions": [
-                    {
-                        "questionId": "q_phy_01",
-                        "questionText": "What is the unit of **force**?\n\n ![The Man](https://en.wikipedia.org/wiki/Force#/media/File:GodfreyKneller-IsaacNewton-1689.jpg)",
-                        "questionImageUrl": None,
-                        "options": [
-                            {"optionId": "opt_p1_a", "optionText": "Newton", "optionImageUrl": None},
-                            {"optionId": "opt_p1_b", "optionText": "Watt", "optionImageUrl": None},
-                            {"optionId": "opt_p1_c", "optionText": "Joule", "optionImageUrl": None},
-                            {"optionId": "opt_p1_d", "optionText": "Pascal", "optionImageUrl": None}
-                        ]
-                    }
-                ]
-            },
-            {
-                "sectionId": "phy_sec_2",
-                "sectionName": "Physics Sec 2",
-                "type": "NUMERICAL",
-                "positiveMarks": 4,
-                "negativeMarks": 0,
-                "questions": [
-                {
-                        "questionId": "q_phy_02",
-                        "questionText": "What is the value of **g**?",
-                        "questionImageUrl": None,
-                        "options": []
-                    }
-                ]
-            },
-            {
-                "sectionId": "phy_sec_3",
-                "sectionName": "Physics Sec 3",
-                "type": "MCMC",
-                "positiveMarks": 4,
-                "negativeMarks": -2,
-                "questions": [
-                {
-                        "questionId": "q_phy_03",
-                        "questionText": "What is the unit of **force**?",
-                        "questionImageUrl": None,
-                        "options": [
-                            {"optionId": "opt_p3_a", "optionText": "Newton", "optionImageUrl": None},
-                            {"optionId": "opt_p3_b", "optionText": "N", "optionImageUrl": None},
-                            {"optionId": "opt_p3_c", "optionText": "Joule", "optionImageUrl": None},
-                            {"optionId": "opt_p3_d", "optionText": "Pascal", "optionImageUrl": None}
-                        ]
-                    }
-                ]
-            },
-            {
-                "sectionId": "chem_sec_1",
-                "sectionName": "Chemistry Sec 1",
-                "type": "MCSC",
-                "positiveMarks": 4,
-                "negativeMarks": -1,
-                "questions": [
-                    {
-                        "questionId": "q_chem_01",
-                        "questionText": "What is the chemical symbol for Gold?",
-                        "questionImageUrl": None,
-                        "options": [
-                            {"optionId": "opt_c1_a", "optionText": "Ag", "optionImageUrl": None},
-                            {"optionId": "opt_c1_b", "optionText": "Au", "optionImageUrl": None},
-                            {"optionId": "opt_c1_c", "optionText": "Fe", "optionImageUrl": None},
-                            {"optionId": "opt_c1_d", "optionText": "Pb", "optionImageUrl": None}
-                        ]
-                    },
-                    {
-                        "questionId": "q_chem_02",
-                        "questionText": "What is the chemical symbol for Gold?",
-                        "questionImageUrl": None,
-                        "options": [
-                            {"optionId": "opt_c2_a", "optionText": "Ag", "optionImageUrl": None},
-                            {"optionId": "opt_c2_b", "optionText": "Au", "optionImageUrl": None},
-                            {"optionId": "opt_c2_c", "optionText": "Fe", "optionImageUrl": None},
-                            {"optionId": "opt_c2_d", "optionText": "Pb", "optionImageUrl": None}
-                        ]
-                    },
-                    {
-                        "questionId": "q_chem_03",
-                        "questionText": "What is the chemical symbol for Gold?",
-                        "questionImageUrl": None,
-                        "options": [
-                            {"optionId": "opt_c3_a", "optionText": "Ag", "optionImageUrl": None},
-                            {"optionId": "opt_c3_b", "optionText": "Au", "optionImageUrl": None},
-                            {"optionId": "opt_c3_c", "optionText": "Fe", "optionImageUrl": None},
-                            {"optionId": "opt_c3_d", "optionText": "Pb", "optionImageUrl": None}
-                        ]
-                    },
-                    {
-                        "questionId": "q_chem_04",
-                        "questionText": "What is the chemical symbol for Gold?",
-                        "questionImageUrl": None,
-                        "options": [
-                            {"optionId": "opt_c4_a", "optionText": "Ag", "optionImageUrl": None},
-                            {"optionId": "opt_c4_b", "optionText": "Au", "optionImageUrl": None},
-                            {"optionId": "opt_c4_c", "optionText": "Fe", "optionImageUrl": None},
-                            {"optionId": "opt_c4_d", "optionText": "Pb", "optionImageUrl": None}
-                        ]
-                    }
-                ]
-            }
-        ]
+        "sessionId": f"session_db_{uuid.uuid4()}",
+        "testId": "jee_main_structured_01",
+        "testName": "JEE Mock Test (Structured)",
+        "durationInSeconds": 3600,
+        "sections": [{
+            "sectionId": "structured_questions_sec_1",
+            "sectionName": "Structured Questions",
+            "type": "MCSC", "positiveMarks": 4, "negativeMarks": -1,
+            "questions": parsed_questions
+        }]
     }
+
+
+
+app.include_router(rag_routes.router)
+
+# =======================================================================
+# 1. ANALYTICS DATA ENDPOINT
+# =======================================================================
+@app.get("/analytics", response_model=schemas.AnalyticsResponse)
+async def get_analytics_data(
+    current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Provides all necessary data to populate the user's analytics dashboard.
+    """
+    user_id = current_user.user_id
+
+    # --- Query 1: Stats Cards ---
+    # Total tests completed
+    completed_tests_query = select(func.count(models.Test.test_id)).where(
+        models.Test.user_id == user_id,
+        models.Test.status == models.TestStatusEnum.COMPLETED
+    )
+    completed_tests_count = (await db.execute(completed_tests_query)).scalar_one()
+
+    # Average accuracy from aggregate table
+    accuracy_query = select(
+        func.sum(models.UserSubjectAnalytics.correct_answers),
+        func.sum(models.UserSubjectAnalytics.questions_attempted)
+    ).where(models.UserSubjectAnalytics.user_id == user_id)
+    accuracy_result = (await db.execute(accuracy_query)).first()
+    
+    total_correct, total_attempted = accuracy_result or (0, 0)
+    average_accuracy = (total_correct / total_attempted * 100) if total_attempted else 0.0
+
+    # For now, let's use dummy values for "change" and "study time" as they require historical data
+    stats_cards = [
+        schemas.StatsCardData(title="Total Tests Completed", value=str(completed_tests_count), change="+12% from last month", trend_color="green"),
+        schemas.StatsCardData(title="Average Accuracy", value=f"{average_accuracy:.1f}%", change="+5% from last month", trend_color="green"),
+        schemas.StatsCardData(title="Study Time This Week", value="24.5h", change="-2% from last week", trend_color="red"),
+        schemas.StatsCardData(title="Overall Progress", value="92%", change="+8% from last month", trend_color="green"),
+    ]
+
+    # --- Query 2: Test Score Progression (Line Chart) ---
+    # Fetch the last 7 completed tests
+    score_progression_query = (
+        select(models.Test.final_score, models.Test.end_time)
+        .where(
+            models.Test.user_id == user_id,
+            models.Test.status == models.TestStatusEnum.COMPLETED,
+            models.Test.final_score.is_not(None) # Ensure score exists
+        )
+        .order_by(models.Test.end_time.asc())
+        .limit(7)
+    )
+    score_results = (await db.execute(score_progression_query)).all()
+    
+    test_score_progression = schemas.TestScoreProgressionData(
+        spots=[schemas.ChartSpot(x=float(i), y=score) for i, (score, _) in enumerate(score_results)],
+        dates=[dt.strftime("%b %d") for _, dt in score_results]
+    )
+
+    # --- Query 3: Subject Performance (Bar Chart & Progress Bars) ---
+    subject_perf_query = (
+        select(
+            models.Subject.subject_name,
+            models.UserSubjectAnalytics.correct_answers,
+            models.UserSubjectAnalytics.questions_attempted
+        )
+        .join(models.Subject, models.UserSubjectAnalytics.subject_id == models.Subject.subject_id)
+        .where(models.UserSubjectAnalytics.user_id == user_id)
+    )
+    subject_perf_results = (await db.execute(subject_perf_query)).all()
+
+    subject_performance = [
+        schemas.SubjectPerformanceData(
+            subject_name=name,
+            accuracy=(correct / attempted * 100) if attempted else 0
+        ) for name, correct, attempted in subject_perf_results
+    ]
+
+    # --- Query 4: Recent Tests List ---
+    # This is a more complex query as we need to calculate max score on the fly.
+    # NOTE: For better performance, consider adding a `max_score` column to the `Test` table.
+    recent_tests_query = (
+        select(models.Test)
+        .options(selectinload(models.Test.subject), selectinload(models.Test.answers).selectinload(models.TestAnswer.question))
+        .where(
+            models.Test.user_id == user_id,
+            models.Test.status == models.TestStatusEnum.COMPLETED
+        )
+        .order_by(models.Test.end_time.desc())
+        .limit(4)
+    )
+    recent_tests_results = (await db.execute(recent_tests_query)).scalars().all()
+    
+    recent_tests = []
+    for test in recent_tests_results:
+        max_score = sum(ans.question.positive_marks for ans in test.answers)
+        duration_delta = test.end_time - test.start_time
+        duration_mins = duration_delta.total_seconds() // 60
+        
+        recent_tests.append(schemas.RecentTestData(
+            name=test.test_name,
+            subject=test.subject.subject_name if test.subject else "Mixed",
+            score=int(test.final_score),
+            max_score=max_score,
+            status=test.status.value,
+            date=test.end_time.strftime("%b %d, %Y"),
+            time=f"{int(duration_mins)} mins"
+        ))
+
+    return schemas.AnalyticsResponse(
+        username=current_user.name,
+        stats_cards=stats_cards,
+        test_score_progression=test_score_progression,
+        subject_performance=subject_performance,
+        recent_tests=recent_tests,
+    )
+
+
+# =======================================================================
+# 2. TEST CALCULATION & SUBMISSION ENDPOINT
+# =======================================================================
+@app.post("/tests/{test_id}/submit", response_model=schemas.TestSubmissionResponse)
+async def submit_test(
+    test_id: str,
+    submission: schemas.TestSubmissionRequest,
+    current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Receives user's answers for a test, calculates the score, updates analytics,
+    and marks the test as completed.
+    """
+    # --- Step 1: Fetch the test and ensure it's valid to submit ---
+    test_query = (
+        select(models.Test)
+        .options(
+            selectinload(models.Test.answers).selectinload(models.TestAnswer.question).options(
+                selectinload(models.Question.options),
+                selectinload(models.Question.subtopic).selectinload(models.Subtopic.chapter).selectinload(models.Chapter.subject)
+            )
+        )
+        .where(models.Test.test_id == test_id, models.Test.user_id == current_user.user_id)
+    )
+    test = (await db.execute(test_query)).scalars().first()
+
+    if not test:
+        raise HTTPException(status_code=404, detail="Test not found.")
+    if test.status == models.TestStatusEnum.COMPLETED:
+        raise HTTPException(status_code=400, detail="Test has already been completed.")
+
+    # --- Step 2: Process and score each answer ---
+    final_score = 0
+    max_score = 0
+    answers_map = {ans.question_id: ans for ans in submission.answers}
+    
+    # Dictionaries to aggregate analytics updates
+    subject_analytics_updates = {} # {subject_id: {"correct": x, "attempted": y, "time": z}}
+    
+    for test_answer in test.answers:
+        question = test_answer.question
+        max_score += question.positive_marks
+        
+        user_submission = answers_map.get(question.question_id)
+        
+        # If the user didn't submit an answer for this question
+        if not user_submission or (not user_submission.selected_option_ids and user_submission.integer_answer is None):
+            test_answer.status = models.TestAnswerStatusEnum.UNATTEMPTED
+            continue # No score change
+
+        # --- Update the TestAnswer record ---
+        test_answer.time_taken_seconds = user_submission.time_taken_seconds
+        
+        # --- Scoring Logic ---
+        is_correct = False
+        if question.question_type in [models.QuestionType.MCSC, models.QuestionType.MCMC]:
+            correct_option_ids = {opt.option_id for opt in question.options if opt.is_correct}
+            selected_option_ids = set(user_submission.selected_option_ids or [])
+            
+            # Update selections in DB
+            test_answer.selections = [
+                models.TestAnswerSelection(selected_option_id=opt_id) for opt_id in selected_option_ids
+            ]
+            
+            if correct_option_ids == selected_option_ids:
+                is_correct = True
+        
+        elif question.question_type in [models.QuestionType.INT, models.QuestionType.NUM]:
+            # For numerical, we assume the solution is stored in the first option's text
+            # A better design would be a dedicated `correct_answer_text` field in the Question model
+            correct_answer = int(question.options[0].option_text) if question.options else None
+            test_answer.integer_answer = user_submission.integer_answer
+            if correct_answer is not None and user_submission.integer_answer == correct_answer:
+                is_correct = True
+        
+        # --- Apply marks and update status ---
+        if is_correct:
+            final_score += question.positive_marks
+            test_answer.status = models.TestAnswerStatusEnum.CORRECT
+        else:
+            final_score -= question.negative_marks
+            test_answer.status = models.TestAnswerStatusEnum.INCORRECT
+            
+        # --- Aggregate analytics ---
+        sub_id = question.subtopic.chapter.subject_id
+        if sub_id not in subject_analytics_updates:
+            subject_analytics_updates[sub_id] = {"correct": 0, "attempted": 0, "time": 0}
+
+        subject_analytics_updates[sub_id]["attempted"] += 1
+        subject_analytics_updates[sub_id]["time"] += user_submission.time_taken_seconds
+        if is_correct:
+            subject_analytics_updates[sub_id]["correct"] += 1
+
+    # --- Step 3: Update the main Test record ---
+    test.final_score = final_score
+    test.status = models.TestStatusEnum.COMPLETED
+    test.end_time = datetime.utcnow()
+
+    # --- Step 4: Update aggregate analytics tables ---
+    # This part can be slow if done naively. A bulk update or a database-side
+    # procedure would be more efficient for high traffic.
+    for subject_id, updates in subject_analytics_updates.items():
+        # Find existing record or create a new one (UPSERT logic)
+        analytics_record_query = select(models.UserSubjectAnalytics).where(
+            models.UserSubjectAnalytics.user_id == current_user.user_id,
+            models.UserSubjectAnalytics.subject_id == subject_id,
+            # Assuming exam_id=1 for now, you'll need to pass this in a real scenario
+            models.UserSubjectAnalytics.exam_id == 1 
+        )
+        record = (await db.execute(analytics_record_query)).scalars().first()
+        
+        if record:
+            record.correct_answers += updates["correct"]
+            record.questions_attempted += updates["attempted"]
+            record.total_time_taken_seconds += updates["time"]
+        else:
+            new_record = models.UserSubjectAnalytics(
+                user_id=current_user.user_id,
+                exam_id=1, # Replace with actual exam_id
+                subject_id=subject_id,
+                correct_answers=updates["correct"],
+                questions_attempted=updates["attempted"],
+                total_time_taken_seconds=updates["time"]
+            )
+            db.add(new_record)
+            
+    await db.commit()
+
+    return schemas.TestSubmissionResponse(
+        message="Test submitted successfully",
+        test_id=test_id,
+        final_score=final_score,
+        max_score=float(max_score)
+    )
