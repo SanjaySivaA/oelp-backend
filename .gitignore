@@ -19,3 +19,9 @@ venv/
 
 # alembic backup files
 *.bak
+
+scripts/llm_outputs/
+scripts/pdfs/
+scripts/seed_data/
+scripts/images/
+scripts/run.sh
