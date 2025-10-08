@@ -11,7 +11,8 @@ load_dotenv()
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 # --- User-defined Constants ---
-PDF_FILE_PATH = "pdfs/2017_1.pdf"
+FILE = "2017_1"
+PDF_FILE_PATH = f"pdfs/{FILE}.pdf"
 SYLLABUS_FILE_PATH = "jee_advanced_syllabus.json" 
 SOURCE_TYPE = "PYQ"
 SOURCE_DETAILS = "JEE Advanced 2017 Paper 1" 
@@ -60,7 +61,7 @@ def process_with_gemini(extracted_data, source_type, source_details, full_syllab
     1.  **For each question in the Raw Extracted Data, perform the following steps:**
     2.  **Format Mathematical Expressions:** Identify all mathematical formulas, variables, and symbols in the `question_text` and all `option_` fields. Convert them into standard LaTeX format, enclosed in single dollar signs (`$...$`). For example, transform "The value is sqrt(A/(B^2))" into "The value is $\\sqrt{{\\frac{{A}}{{B^2}}}}$". Ensure even single variables like 'x' or 'v' are formatted as '$x$' or '$v$'.
     3.  **Determine `subject`:** Read the `section_instructions` to determine if the question is from 'Physics', 'Chemistry', or 'Mathematics'.
-    4.  **Classify `subtopic_name`:** Based on the identified subject, look into the syllabus JSON and choose the single most appropriate `subtopic_name`.
+    4.  **Classify `subtopic_name`:** For each question, you MUST choose the most relevant subtopic from the following list. **CRITICAL**: The `subtopic_name` in your output must be an exact, case-sensitive, character-for-character copy of a name from this list. Do not alter, summarize, or rephrase it in any way.
     5.  **Format Options:** Populate the `option_A`, `option_B`, `option_C`, and `option_D` fields. If a question has no options, set the unused fields to `null`.
     6.  **Determine `question_type`:** Use "MCMC" for multiple correct, "MCSC" for single correct, "NUMERICAL" for integer answers.
     7.  **Determine `difficulty_level`:** Classify as "EASY", "MEDIUM", or "HARD".
@@ -113,8 +114,7 @@ if __name__ == "__main__":
             if final_json_data:
                 print("--- Successfully received and parsed JSON from Gemini! ---")
                 
-                output_filename = "2017_1_fl.json"
-                with open(f"seed_data/{output_filename}", "w") as f:
+                with open(f"llm_outputs/{FILE}.json", "w") as f:
                     json.dump(final_json_data, f, indent=2)
                 
-                print(f"--- Clean, structured JSON data saved to {output_filename} ---")
+                print(f"--- Clean, structured JSON data saved to {FILE}.json ---")
