@@ -146,43 +146,7 @@ async def read_users_me(current_user: models.User = Depends(get_current_user)):
     # We just need to return the user object.
     return current_user
 
-@app.get("/getTest")
-async def get_test_from_db(db: AsyncSession = Depends(get_db)):
-    query = (
-        select(models.Question)
-        .options(selectinload(models.Question.options))
-        .order_by(func.random())
-        .limit(10)
-    )
-    result = await db.execute(query)
-    questions_from_db = result.scalars().unique().all()
 
-    if not questions_from_db:
-        raise HTTPException(status_code=404, detail="No questions found.")
-
-    parsed_questions = [{
-        "questionId": q.question_id,
-        "questionText": q.question_text,
-        "questionImageUrl": q.image_url,
-        "options": [{"optionId": opt.option_id, "optionText": opt.option_text, "optionImageUrl": opt.image_url} for opt in q.options]
-    } for q in questions_from_db]
-    
-    return {
-        "sessionId": f"session_db_{uuid.uuid4()}",
-        "testId": "jee_main_structured_01",
-        "testName": "JEE Mock Test (Structured)",
-        "durationInSeconds": 3600,
-        "sections": [{
-            "sectionId": "structured_questions_sec_1",
-            "sectionName": "Structured Questions",
-            "type": "MCSC", "positiveMarks": 4, "negativeMarks": -1,
-            "questions": parsed_questions
-        }]
-    }
-
-
-
-app.include_router(rag_routes.router)
 
 # =======================================================================
 # 1. ANALYTICS DATA ENDPOINT
