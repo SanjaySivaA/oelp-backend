@@ -6,6 +6,7 @@ from passlib.context import CryptContext
 from datetime import datetime, timedelta, timezone
 import uuid
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 # project modules
 from . import models, schemas
@@ -155,6 +156,57 @@ async def read_users_me(current_user: models.User = Depends(get_current_user)):
     # We just need to return the user object.
     return current_user
 
+@app.get("/test-templates/{template_id}", response_model=schemas.TestDetail)
+async def get_test_details(
+    template_id: str, 
+    db: AsyncSession = Depends(get_db), 
+    current_user: models.User = Depends(get_current_user) # Protects the endpoint
+):
+    """
+    Fetches the complete structure of a test (questions and options)
+    based on a TestTemplate ID. This is the endpoint to call when a user
+    is about to start a test.
+    """
+    # This query is optimized to fetch everything in one go, avoiding multiple DB hits.
+    # It eagerly loads the chain of relationships:
+    # TestTemplate -> TestTemplateQuestion (association) -> Question -> QuestionOption
+    query = (
+        select(models.TestTemplate)
+        .where(models.TestTemplate.template_id == template_id)
+        .options(
+            selectinload(models.TestTemplate.question_associations)
+            .selectinload(models.TestTemplateQuestion.question)
+            .selectinload(models.Question.options)
+        )
+    )
+    
+    result = await db.execute(query)
+    template = result.scalars().first()
+
+    if not template:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Test template not found.",
+        )
+
+    # The data is loaded, but the questions are not yet sorted.
+    # We sort them here based on the 'question_order' in the association table.
+    sorted_associations = sorted(template.question_associations, key=lambda assoc: assoc.question_order)
+    
+    # Extract the sorted questions
+    sorted_questions = [assoc.question for assoc in sorted_associations]
+
+    # We manually create the response object to ensure the questions are in the correct order.
+    # Pydantic's response_model will automatically handle the conversion.
+    return {
+        "template_id": template.template_id,
+        "template_name": template.template_name,
+        "description": template.description,
+        "duration_minutes": template.duration_minutes,
+        "test_type": template.test_type,
+        "questions": sorted_questions,
+    }
+    
 @app.get("/getTest")
 async def sendTest():
     return {
