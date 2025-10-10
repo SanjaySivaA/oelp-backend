@@ -20,4 +20,10 @@ venv/
 # alembic backup files
 *.bak
 
-scripts/
+scripts/llm_outputs/
+scripts/pdfs/
+scripts/seed_data/
+scripts/images/
+scripts/logs/
+scripts/run.sh
+scripts/jee_advanced_syllabus.json
