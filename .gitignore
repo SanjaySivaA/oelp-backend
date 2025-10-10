@@ -25,5 +25,6 @@ scripts/pdfs/
 scripts/seed_data/
 scripts/images/
 scripts/logs/
+scripts/failed_outputs/
 scripts/run.sh
 scripts/jee_advanced_syllabus.json
