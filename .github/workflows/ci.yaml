@@ -14,8 +14,6 @@ jobs:
 
     services:
       postgres:
-        # --- CHANGE 1: USE THE PGVECTOR IMAGE ---
-        # This image comes with the vector extension pre-installed.
         image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: testuser
@@ -41,15 +39,17 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt # Make sure alembic and pytest are in this file
+        pip install -r requirements.txt
 
-    # --- CHANGE 2: ADD A MIGRATION STEP ---
     - name: Run database migrations
       env:
-        # The DATABASE_URL must be available for the migration command.
+        # --- FIX APPLIED HERE ---
+        # All required secrets must be available for the app to initialize.
         DATABASE_URL: "postgresql://testuser:testpassword@localhost:5432/testdb"
+        SECRET_KEY: ${{ secrets.SECRET_KEY }}
+        ALGORITHM: ${{ secrets.ALGORITHM }}
+        ACCESS_TOKEN_EXPIRE_MINUTES: ${{ secrets.ACCESS_TOKEN_EXPIRE_MINUTES }}
       run: |
-        # This command tells Alembic to apply all migrations.
         alembic upgrade head
 
     - name: Run tests
