@@ -45,7 +45,7 @@ jobs:
       env:
         # --- FIX APPLIED HERE ---
         # All required secrets must be available for the app to initialize.
-        DATABASE_URL: "postgresql://testuser:testpassword@localhost:5432/testdb"
+        DATABASE_URL: "postgresql+psycopg://testuser:testpassword@localhost:5432/testdb"
         SECRET_KEY: ${{ secrets.SECRET_KEY }}
         ALGORITHM: ${{ secrets.ALGORITHM }}
         ACCESS_TOKEN_EXPIRE_MINUTES: ${{ secrets.ACCESS_TOKEN_EXPIRE_MINUTES }}
@@ -54,7 +54,7 @@ jobs:
 
     - name: Run tests
       env:
-        DATABASE_URL: "postgresql://testuser:testpassword@localhost:5432/testdb"
+        DATABASE_URL: "postgresql+psycopg://testuser:testpassword@localhost:5432/testdb"
         SECRET_KEY: ${{ secrets.SECRET_KEY }}
         ALGORITHM: ${{ secrets.ALGORITHM }}
         ACCESS_TOKEN_EXPIRE_MINUTES: ${{ secrets.ACCESS_TOKEN_EXPIRE_MINUTES }}
