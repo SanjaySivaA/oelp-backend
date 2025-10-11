@@ -89,6 +89,11 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession
 
 # --- Endpoints ---
 
+@app.get("/")
+def read_root():
+    """A simple health check endpoint."""
+    return {"status": "ok", "message": "Welcome to the OELP Backend!"}
+
 @app.post("/register", response_model=schemas.RegisterResponse)
 async def register_user(user: schemas.UserCreate, db: AsyncSession = Depends(get_db)):
     # Check if user with that email already exists
