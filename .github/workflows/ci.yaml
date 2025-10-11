@@ -1,0 +1,35 @@
+name: Python CI
+
+# This action runs on pushes to the main/development branches and on pull requests
+on:
+  push:
+    branches: [ "main", "development" ]
+  pull_request:
+    branches: [ "main", "development" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest # Use a standard Linux virtual machine
+
+    steps:
+    # 1. Checks out your repository's code so the job can access it
+    - name: Check out code
+      uses: actions/checkout@v4
+
+    # 2. Sets up the Python environment
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12' # Use the same version you develop with
+
+    # 3. Installs your project's dependencies
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest
+        pip install -r requirements.txt
+
+    # 4. Runs your tests using Pytest
+    - name: Run tests
+      run: |
+        pytest

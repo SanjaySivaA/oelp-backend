@@ -28,3 +28,5 @@ scripts/logs/
 scripts/failed_outputs/
 scripts/run.sh
 scripts/jee_advanced_syllabus.json
+
+**/.pytest_cache/
