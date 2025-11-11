@@ -6,6 +6,7 @@ from passlib.context import CryptContext
 from datetime import datetime, timedelta, timezone
 import uuid
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 # project modules
 from . import models, schemas
@@ -24,31 +25,20 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 app = FastAPI()
 
 # --- CORS ---
-# 2. DEFINE THE ALLOWED ORIGINS (FRONTEND ADDRESSES)
-# For development, we can be permissive. Flutter web uses random ports.
-# We include the standard localhost addresses.
-origins = ["*"]
-    #"http://localhost",
-    #"http://localhost:8080",
-    # Add any other specific port your Flutter app runs on if you know it
-    # Or for maximum ease in local dev, you could use "*"
-    # "http://localhost:54321" # Example of a specific Flutter dev port
-#]
-
 
 # 3. ADD THE MIDDLEWARE TO YOUR APP
 # This should be added before your routes are defined.
 app.add_middleware(
     CORSMiddleware,
-    # allow_origins=settings.ALLOWED_ORIGINS, # <-- We are replacing this line
-    allow_origin_regex=settings.CORS_ORIGIN_REGEX, # <-- With this new line
+    allow_origins=settings.ALLOWED_ORIGINS, # <-- We are replacing this line
+    # allow_origin_regex=settings.CORS_ORIGIN_REGEX, # <-- With this new line
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
-# --- Utility Functions ---
+# --- Utility Functions ---nightcore
 
 def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
@@ -98,6 +88,11 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession
     return user
 
 # --- Endpoints ---
+
+@app.get("/")
+def read_root():
+    """A simple health check endpoint."""
+    return {"status": "ok", "message": "Welcome to the OELP Backend!"}
 
 @app.post("/register", response_model=schemas.RegisterResponse)
 async def register_user(user: schemas.UserCreate, db: AsyncSession = Depends(get_db)):
@@ -166,6 +161,57 @@ async def read_users_me(current_user: models.User = Depends(get_current_user)):
     # We just need to return the user object.
     return current_user
 
+@app.get("/test-templates/{template_id}", response_model=schemas.TestDetail)
+async def get_test_details(
+    template_id: str, 
+    db: AsyncSession = Depends(get_db), 
+    current_user: models.User = Depends(get_current_user) # Protects the endpoint
+):
+    """
+    Fetches the complete structure of a test (questions and options)
+    based on a TestTemplate ID. This is the endpoint to call when a user
+    is about to start a test.
+    """
+    # This query is optimized to fetch everything in one go, avoiding multiple DB hits.
+    # It eagerly loads the chain of relationships:
+    # TestTemplate -> TestTemplateQuestion (association) -> Question -> QuestionOption
+    query = (
+        select(models.TestTemplate)
+        .where(models.TestTemplate.template_id == template_id)
+        .options(
+            selectinload(models.TestTemplate.question_associations)
+            .selectinload(models.TestTemplateQuestion.question)
+            .selectinload(models.Question.options)
+        )
+    )
+    
+    result = await db.execute(query)
+    template = result.scalars().first()
+
+    if not template:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Test template not found.",
+        )
+
+    # The data is loaded, but the questions are not yet sorted.
+    # We sort them here based on the 'question_order' in the association table.
+    sorted_associations = sorted(template.question_associations, key=lambda assoc: assoc.question_order)
+    
+    # Extract the sorted questions
+    sorted_questions = [assoc.question for assoc in sorted_associations]
+
+    # We manually create the response object to ensure the questions are in the correct order.
+    # Pydantic's response_model will automatically handle the conversion.
+    return {
+        "template_id": template.template_id,
+        "template_name": template.template_name,
+        "description": template.description,
+        "duration_minutes": template.duration_minutes,
+        "test_type": template.test_type,
+        "questions": sorted_questions,
+    }
+    
 @app.get("/getTest")
 async def sendTest():
     return {
