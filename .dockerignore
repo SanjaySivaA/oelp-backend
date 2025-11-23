@@ -1,0 +1,26 @@
+# .dockerignore
+
+# Git files
+.git
+.gitignore
+
+# Virtual Environment
+venv/
+.venv/
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# IDE / Editor specific files
+.vscode/
+.idea/
+*.DS_Store
+
+# Secrets file (should never be in the container)
+.env
+
+# Alembic backup files
+*.bak
