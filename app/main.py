@@ -817,7 +817,7 @@ async def register_user(user: schemas.UserCreate, db: AsyncSession = Depends(get
     
     new_user = models.User(
         user_id=str(uuid.uuid4()), email=user.email, name=user.name, 
-        password_hash=get_password_hash(user.password)
+        password_hash=get_password_hash(user.password), created_at=datetime.utcnow()
     )
     db.add(new_user)
     await db.commit()
@@ -1255,3 +1255,188 @@ async def get_analytics_data(
         username=current_user.name, stats_cards=stats, test_score_progression=progression,
         subject_performance=perf_list, recent_tests=recent_list
     )
+
+# =======================================================================
+# 1. LIST CHAPTERS (Populates the Selection Screen)
+# =======================================================================
+@app.get("/subjects/{subject_name}/chapters", response_model=List[schemas.ChapterCard])
+async def get_chapters_for_subject(
+    subject_name: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    print(f"--- Fetching Chapters for {subject_name} ---")
+    
+    # Logic: Get all chapters linked to this Subject Name
+    query = (
+        select(models.Chapter)
+        .join(models.Subject)
+        .where(models.Subject.subject_name.ilike(subject_name)) # ilike for case-insensitive (Physics/physics)
+        .order_by(models.Chapter.chapter_name)
+    )
+    
+    result = await db.execute(query)
+    chapters = result.scalars().all()
+    
+    response = []
+    for chap in chapters:
+        # Optional: You could query the actual count of questions here if needed
+        # For performance, we can hardcode or estimate, or do a separate count query
+        response.append({
+            "chapterId": chap.chapter_id,
+            "chapterName": chap.chapter_name,
+            "questionCount": 20 # Placeholder or dynamic
+        })
+        
+    return response
+
+# =======================================================================
+# 2. START CHAPTER TEST (Logic to fetch 20 random Qs)
+# =======================================================================
+@app.post("/tests/start/chapter", response_model=schemas.TestResponse)
+async def start_chapter_test(
+    request: schemas.StartChapterTestRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    chapter_id = request.chapterId
+    print(f"--- Starting Test for Chapter ID: {chapter_id} ---")
+
+    # 1. FETCH QUESTIONS
+    # We join Question -> Subtopic -> Chapter to filter by chapter_id
+    questions_query = (
+        select(models.Question)
+        .join(models.Subtopic)
+        .join(models.Chapter)
+        .where(models.Chapter.chapter_id == chapter_id)
+        .order_by(func.random()) # Randomize order
+        .limit(request.questionCount)
+        .options(selectinload(models.Question.options)) # Load options efficiently
+    )
+    
+    questions = (await db.execute(questions_query)).scalars().all()
+    
+    if not questions:
+        # Fallback: detailed error if chapter exists but is empty
+        raise HTTPException(
+            status_code=404, 
+            detail="No questions found for this chapter in the database."
+        )
+
+    # 2. FETCH CHAPTER DETAILS (For Test Name)
+    chapter_res = await db.get(models.Chapter, chapter_id)
+    test_name = f"{chapter_res.chapter_name} Practice" if chapter_res else "Chapter Practice"
+
+    # 3. CREATE TEST SESSION
+    new_test = models.Test(
+        test_id=str(uuid.uuid4()),
+        user_id=current_user.user_id,
+        template_id=None, # No template needed
+        test_name=test_name,
+        test_type=models.TestTypeEnum.CHAPTER_TEST,
+        status=models.TestStatusEnum.IN_PROGRESS,
+        start_time=datetime.utcnow(),
+        created_at=datetime.utcnow()
+    )
+    db.add(new_test)
+    
+    # 4. LINK QUESTIONS TO TEST
+    sections_map = {}
+    
+    for q in questions:
+        # Create TestAnswer entry (the link)
+        db.add(models.TestAnswer(
+            answer_id=str(uuid.uuid4()), 
+            test=new_test, 
+            question=q
+        ))
+        
+        # Format for JSON Response
+        q_type = q.question_type.value if q.question_type else "MCSC"
+        if q_type not in sections_map: sections_map[q_type] = []
+        
+        sections_map[q_type].append({
+            "questionId": q.question_id, 
+            "questionText": q.question_text,
+            "options": [{"optionId": o.option_id, "optionText": o.option_text} for o in q.options],
+            "positiveMarks": q.positive_marks, 
+            "negativeMarks": q.negative_marks
+        })
+
+    await db.commit()
+    await db.refresh(new_test)
+
+    # 5. CONSTRUCT FINAL RESPONSE
+    final_sections = [
+        {"sectionId": f"{qt.lower()}_sec", "sectionName": f"Section - {qt}", "questionType": qt, "questions": qs}
+        for qt, qs in sections_map.items()
+    ]
+
+    return {
+        "sessionId": new_test.test_id, 
+        "testId": new_test.test_id,
+        "testName": new_test.test_name, 
+        "durationInSeconds": 3600, # 60 Minutes standard for chapter practice
+        "sections": final_sections
+    }
+
+# app/main.py
+
+@app.get("/tests/{test_id}", response_model=schemas.TestResponse)
+async def get_existing_test(
+    test_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    print(f"--- Fetching Existing Test: {test_id} ---")
+    
+    # 1. Fetch Test with all Questions and Options loaded
+    query = (
+        select(models.Test)
+        .where(
+            models.Test.test_id == test_id,
+            models.Test.user_id == current_user.user_id
+        )
+        .options(
+            selectinload(models.Test.answers)
+            .selectinload(models.TestAnswer.question)
+            .selectinload(models.Question.options)
+        )
+    )
+    result = await db.execute(query)
+    test = result.scalars().first()
+    
+    if not test:
+        raise HTTPException(status_code=404, detail="Test not found")
+
+    # 2. Format Response (Same logic as /getTest)
+    sections_map = {}
+    for ans in test.answers:
+        q = ans.question
+        q_type = q.question_type.value if q.question_type else "MCSC"
+        
+        if q_type not in sections_map: sections_map[q_type] = []
+        
+        sections_map[q_type].append({
+            "questionId": q.question_id,
+            "questionText": q.question_text,
+            "options": [{"optionId": o.option_id, "optionText": o.option_text} for o in q.options],
+            "positiveMarks": q.positive_marks,
+            "negativeMarks": q.negative_marks
+        })
+
+    final_sections = [
+        {"sectionId": f"{qt.lower()}_sec", "sectionName": f"Section - {qt}", "questionType": qt, "questions": qs}
+        for qt, qs in sections_map.items()
+    ]
+
+    # Calculate remaining time (heuristic: assume 60 mins total duration)
+    # Ideally, you store 'duration' in the Test model, but for now we default to 60m (3600s)
+    
+    return {
+        "sessionId": test.test_id,
+        "testId": test.test_id,
+        "testName": test.test_name,
+        "durationInSeconds": 3600, 
+        "sections": final_sections
+    }

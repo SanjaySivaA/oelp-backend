@@ -129,3 +129,15 @@ class TestResponse(BaseModel):
     testName: str
     durationInSeconds: int
     sections: List[SectionResponse]
+
+
+# Response for the Chapter List screen
+class ChapterCard(BaseModel):
+    chapterId: int
+    chapterName: str
+    questionCount: int
+
+# Request payload when clicking a Chapter Card
+class StartChapterTestRequest(BaseModel):
+    chapterId: int
+    questionCount: int = 20 # Default to 20
