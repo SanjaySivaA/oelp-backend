@@ -1083,14 +1083,35 @@ async def submit_database_test(
     subject_analytics = {}
     wrong_questions_for_rag = []
 
-    # 2. Evaluate Each Question
+    # 2. Iterate through every question in the test
     for test_answer in test.answers:
         q = test_answer.question
         if not q: continue
         
         max_score += q.positive_marks
         
-        # --- Subject Extraction ---
+        # Get User's Submission for this question
+        user_sub = answers_map.get(q.question_id)
+        
+        # --- A. SAVE USER RESPONSES TO DATABASE ---
+        if user_sub:
+            # CASE 1: MCSC & MCMC (Save to test_answer_selections table)
+            if q.question_type in [models.QuestionTypeEnum.MCSC, models.QuestionTypeEnum.MCMC]:
+                if user_sub.selectedOptionIds:
+                    for opt_id in user_sub.selectedOptionIds:
+                        # Create the link between the Answer and the Selected Option
+                        new_selection = models.TestAnswerSelection(
+                            answer_id=test_answer.answer_id,
+                            selected_option_id=opt_id
+                        )
+                        db.add(new_selection)
+
+            # CASE 2: NUMERICAL (Save to integer_answer column)
+            elif q.question_type == models.QuestionTypeEnum.NUMERICAL:
+                if user_sub.integerAnswer is not None:
+                    test_answer.integer_answer = user_sub.integerAnswer
+
+        # --- B. ANALYTICS SETUP ---
         subj_name = "General"
         subj_id = 1
         subtopic_id = 1
@@ -1103,25 +1124,45 @@ async def submit_database_test(
         
         if subj_name not in subject_analytics:
             subject_analytics[subj_name] = {"correct": 0, "attempted": 0, "time": 0, "id": subj_id}
-        subject_analytics[subj_name]["attempted"] += 1
+        
+        if user_sub and (user_sub.selectedOptionIds or user_sub.integerAnswer is not None):
+            subject_analytics[subj_name]["attempted"] += 1
 
-        # --- SCORING LOGIC ---
-        user_sub = answers_map.get(q.question_id)
-        selected_ids = set(user_sub.selectedOptionIds) if (user_sub and user_sub.selectedOptionIds) else set()
+        # --- C. SCORING LOGIC ---
+        score = 0
+        status = models.TestAnswerStatusEnum.UNATTEMPTED
 
-        # Calculate Score using the Helper
-        score, status = calculate_score_logic(q, selected_ids)
+        # Logic for MCSC / MCMC
+        if q.question_type in [models.QuestionTypeEnum.MCSC, models.QuestionTypeEnum.MCMC]:
+            selected_ids = set(user_sub.selectedOptionIds) if (user_sub and user_sub.selectedOptionIds) else set()
+            score, status = calculate_score_logic(q, selected_ids)
+        
+        # Logic for NUMERICAL
+        elif q.question_type == models.QuestionTypeEnum.NUMERICAL:
+            user_val = user_sub.integerAnswer if user_sub else None
+            if user_val is not None:
+                # NOTE: This assumes you store the correct numerical answer 
+                # inside the 'solution_explanation' or a specific column.
+                # For now, we assume if it matches the first option's text (common hack) or you add a column later.
+                # This is a placeholder for numerical matching:
+                correct_val = extract_correct_numerical_value(q) 
+                if correct_val is not None and user_val == correct_val:
+                    score = q.positive_marks
+                    status = models.TestAnswerStatusEnum.CORRECT
+                else:
+                    score = 0 # No negative marking usually for numerical, or -1
+                    status = models.TestAnswerStatusEnum.INCORRECT
+            else:
+                status = models.TestAnswerStatusEnum.UNATTEMPTED
 
         # Update Totals
         final_score += score
         test_answer.status = status
         
-        # Update Analytics
+        # Update Analytics & RAG Trigger
         if status == models.TestAnswerStatusEnum.CORRECT:
             subject_analytics[subj_name]["correct"] += 1
-        
-        # RAG Trigger: Only if explicitly INCORRECT (Negative Marking)
-        if status == models.TestAnswerStatusEnum.INCORRECT:
+        elif status == models.TestAnswerStatusEnum.INCORRECT:
              wrong_questions_for_rag.append({
                  "text": q.question_text,
                  "subject": subj_name if subj_name != "General" else None, 
@@ -1160,6 +1201,18 @@ async def submit_database_test(
         "finalScore": final_score,
         "maxScore": float(max_score)
     }
+
+# Helper to safely extract numerical answer (You might need to adjust based on how you seed data)
+def extract_correct_numerical_value(question) -> int | None:
+    # If you store the answer in the first option text as a string "5":
+    try:
+        if question.options:
+            for opt in question.options:
+                if opt.is_correct:
+                    return int(float(opt.option_text)) # Handle "5.0" or "5"
+    except:
+        return None
+    return None
 
 # =======================================================================
 # 3. /analytics (Database Driven)
@@ -1240,6 +1293,7 @@ async def get_analytics_data(
         
         recent_list.append(
             schemas.RecentTestData(
+                test_id=t.test_id,
                 name=t.test_name, 
                 subject=subj_name, 
                 score=int(t.final_score) if t.final_score is not None else 0, 
@@ -1479,9 +1533,7 @@ async def get_existing_test(
     db: AsyncSession = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    print(f"--- Fetching Existing Test: {test_id} ---")
-    
-    # 1. Fetch Test with all Questions and Options loaded
+    # 1. Fetch Test with all nested relations
     query = (
         select(models.Test)
         .where(
@@ -1491,7 +1543,9 @@ async def get_existing_test(
         .options(
             selectinload(models.Test.answers)
             .selectinload(models.TestAnswer.question)
-            .selectinload(models.Question.options)
+            .selectinload(models.Question.options),
+            selectinload(models.Test.answers)
+            .selectinload(models.TestAnswer.selections) # Load user selections
         )
     )
     result = await db.execute(query)
@@ -1500,7 +1554,10 @@ async def get_existing_test(
     if not test:
         raise HTTPException(status_code=404, detail="Test not found")
 
-    # 2. Format Response (Same logic as /getTest)
+    # Check if review mode is allowed
+    is_review_mode = (test.status == models.TestStatusEnum.COMPLETED)
+
+    # 2. Format Response
     sections_map = {}
     for ans in test.answers:
         q = ans.question
@@ -1508,12 +1565,45 @@ async def get_existing_test(
         
         if q_type not in sections_map: sections_map[q_type] = []
         
+        # Determine User Selections for this specific answer
+        user_selected_ids = {sel.selected_option_id for sel in ans.selections}
+        
+        # Format Options
+        options_list = []
+        for o in q.options:
+            opt_data = {
+                "optionId": o.option_id,
+                "optionText": o.option_text,
+                # ONLY send correctness info if test is completed
+                "isCorrect": o.is_correct if is_review_mode else False, 
+                "isSelected": (o.option_id in user_selected_ids) if is_review_mode else False
+            }
+            options_list.append(opt_data)
+
+        # Numerical Answer Handling
+        correct_int = None
+        user_int = None
+        if is_review_mode and q.question_type == models.QuestionTypeEnum.NUMERICAL:
+            user_int = ans.integer_answer
+            # Logic to extract correct integer (assuming it's stored or extracted from options)
+            # For this example, we assume we extract it from the first correct option text
+            for o in q.options:
+                 if o.is_correct:
+                     try:
+                         correct_int = int(float(o.option_text))
+                     except: 
+                         pass
+
         sections_map[q_type].append({
             "questionId": q.question_id,
             "questionText": q.question_text,
-            "options": [{"optionId": o.option_id, "optionText": o.option_text} for o in q.options],
+            "options": options_list,
             "positiveMarks": q.positive_marks,
-            "negativeMarks": q.negative_marks
+            "negativeMarks": q.negative_marks,
+            # Extra fields for review
+            "userIntegerAnswer": user_int,
+            "correctIntegerAnswer": correct_int,
+            "status": ans.status.value if is_review_mode else "UNATTEMPTED"
         })
 
     final_sections = [
@@ -1521,9 +1611,6 @@ async def get_existing_test(
         for qt, qs in sections_map.items()
     ]
 
-    # Calculate remaining time (heuristic: assume 60 mins total duration)
-    # Ideally, you store 'duration' in the Test model, but for now we default to 60m (3600s)
-    
     return {
         "sessionId": test.test_id,
         "testId": test.test_id,
