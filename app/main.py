@@ -1380,6 +1380,97 @@ async def start_chapter_test(
         "sections": final_sections
     }
 
+# =======================================================================
+# 3. START SUBJECT TEST (Logic to fetch random Qs for a Subject)
+# =======================================================================
+@app.post("/tests/start/subject", response_model=schemas.TestResponse)
+async def start_subject_test(
+    request: schemas.StartSubjectTestRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    subject_id = request.subjectId
+    print(f"--- Starting Test for Subject ID: {subject_id} ---")
+
+    # 1. FETCH QUESTIONS
+    # Logic: Join Question -> Subtopic -> Chapter -> Subject
+    questions_query = (
+        select(models.Question)
+        .join(models.Subtopic)
+        .join(models.Chapter)
+        .join(models.Subject)
+        .where(models.Subject.subject_id == subject_id)
+        .order_by(func.random()) # Randomize order
+        .limit(request.questionCount)
+        .options(selectinload(models.Question.options)) # Eager load options
+    )
+    
+    questions = (await db.execute(questions_query)).scalars().all()
+    
+    if not questions:
+        raise HTTPException(
+            status_code=404, 
+            detail="No questions found for this subject in the database."
+        )
+
+    # 2. FETCH SUBJECT NAME (For Test Name)
+    subject_res = await db.get(models.Subject, subject_id)
+    # If subject name is Physics, test name becomes "Physics Subject Test"
+    test_name = f"{subject_res.subject_name} Subject Test" if subject_res else "Subject Practice"
+
+    # 3. CREATE TEST SESSION
+    new_test = models.Test(
+        test_id=str(uuid.uuid4()),
+        user_id=current_user.user_id,
+        template_id=None,
+        test_name=test_name,
+        test_type=models.TestTypeEnum.SUBJECT_TEST, # Ensure this Enum exists in your models
+        status=models.TestStatusEnum.IN_PROGRESS,
+        start_time=datetime.utcnow(),
+        created_at=datetime.utcnow()
+    )
+    db.add(new_test)
+    
+    # 4. LINK QUESTIONS TO TEST
+    sections_map = {}
+    
+    for q in questions:
+        # Create the database link
+        db.add(models.TestAnswer(
+            answer_id=str(uuid.uuid4()), 
+            test=new_test, 
+            question=q
+        ))
+        
+        # Format for JSON Response
+        q_type = q.question_type.value if q.question_type else "MCSC"
+        if q_type not in sections_map: sections_map[q_type] = []
+        
+        sections_map[q_type].append({
+            "questionId": q.question_id, 
+            "questionText": q.question_text,
+            "options": [{"optionId": o.option_id, "optionText": o.option_text} for o in q.options],
+            "positiveMarks": q.positive_marks, 
+            "negativeMarks": q.negative_marks
+        })
+
+    await db.commit()
+    await db.refresh(new_test)
+
+    # 5. CONSTRUCT FINAL RESPONSE
+    final_sections = [
+        {"sectionId": f"{qt.lower()}_sec", "sectionName": f"Section - {qt}", "questionType": qt, "questions": qs}
+        for qt, qs in sections_map.items()
+    ]
+
+    return {
+        "sessionId": new_test.test_id, 
+        "testId": new_test.test_id,
+        "testName": new_test.test_name, 
+        "durationInSeconds": 3600 * 3, # Usually 3 hours for a full subject block, or adjust as needed
+        "sections": final_sections
+    }
+
 # app/main.py
 
 @app.get("/tests/{test_id}", response_model=schemas.TestResponse)

@@ -141,3 +141,7 @@ class ChapterCard(BaseModel):
 class StartChapterTestRequest(BaseModel):
     chapterId: int
     questionCount: int = 20 # Default to 20
+
+class StartSubjectTestRequest(BaseModel):
+    subjectId: int
+    questionCount: int = 30 # Default to 30 for a subject test
