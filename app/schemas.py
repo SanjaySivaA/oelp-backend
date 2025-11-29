@@ -67,6 +67,7 @@ class SubjectPerformanceData(BaseModel):
     accuracy: float # A value between 0 and 100
 
 class RecentTestData(BaseModel):
+    test_id: str
     name: str
     subject: str
     score: int
@@ -84,13 +85,14 @@ class AnalyticsResponse(BaseModel):
 
 # --- Schemas for Test Submission Endpoint ---
 
-class AnswerSubmission(BaseModel):
-    questionId: str 
-    selectedOptionIds: List[str]
+class TestSubmissionAnswer(BaseModel):
+    questionId: str
+    selectedOptionIds: List[str] = [] # Used for MCSC / MCMC
+    integerAnswer: int | None = None  # NEW: Used for NUMERICAL
 
 class TestSubmissionRequest(BaseModel):
     sessionId: str
-    answers: List[AnswerSubmission]
+    answers: List[TestSubmissionAnswer]
 
 class TestSubmissionResponse(BaseModel):
     message: str
@@ -141,3 +143,7 @@ class ChapterCard(BaseModel):
 class StartChapterTestRequest(BaseModel):
     chapterId: int
     questionCount: int = 20 # Default to 20
+
+class StartSubjectTestRequest(BaseModel):
+    subjectId: int
+    questionCount: int = 30 # Default to 30 for a subject test
